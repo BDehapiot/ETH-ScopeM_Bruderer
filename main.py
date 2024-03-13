@@ -6,6 +6,11 @@ from skimage import io
 from pathlib import Path
 import segmentation_models as sm
 
+# Skimage
+from skimage.measure import label
+from skimage.filters import gaussian
+from skimage.segmentation import expand_labels
+
 # Functions
 from functions import get_voxel_size, format_stack, get_patches, merge_patches
 
@@ -13,9 +18,9 @@ from functions import get_voxel_size, format_stack, get_patches, merge_patches
 
 # Paths
 local_path = "D:\local_Bruderer\data"
-hstack_name = "Ede1_Magenta_DNA_Green_Example3.tif"
-# hstack_name = "Sur7_Magenta_DNA_Green_Example1.tif"
-# hstack_name = "Tcb3_Magenta_DNA_Green_Example2.tif"
+# hstack_name = "Ede1_Magenta_DNA_Green_Example3.tif"
+# hstack_name = "Sur7_Magenta_DNA_Green_Example3.tif"
+hstack_name = "Tcb3_Magenta_DNA_Green_Example2.tif"
 hstack_path = Path(local_path, hstack_name)
 
 # Model paths
@@ -86,26 +91,53 @@ model.load_weights(model_rslice_out_path)
 predRsliceOut = model.predict(patches_rslice).squeeze()
 predRsliceOut = merge_patches(predRsliceOut, C1C2_rslice.shape, size, overlap)
 
-# Display
-viewer = napari.Viewer()
-viewer.add_image(C1C2_rscale)
-viewer.add_image(predRscaleAll, blending="additive", colormap="bop orange")
-viewer.add_image(predRscaleOut, blending="additive", colormap="bop blue")
-viewer = napari.Viewer()
-viewer.add_image(C1C2_rslice)
-viewer.add_image(predRsliceAll, blending="additive", colormap="bop orange") 
-viewer.add_image(predRsliceOut, blending="additive", colormap="bop blue") 
+# # Display
+# viewer = napari.Viewer()
+# viewer.add_image(C1C2_rscale)
+# viewer.add_image(predRscaleAll, blending="additive", colormap="bop orange")
+# viewer.add_image(predRscaleOut, blending="additive", colormap="bop blue")
+# viewer = napari.Viewer()
+# viewer.add_image(C1C2_rslice)
+# viewer.add_image(predRsliceAll, blending="additive", colormap="bop orange") 
+# viewer.add_image(predRsliceOut, blending="additive", colormap="bop blue") 
 
 #%% Postprocessing ------------------------------------------------------------
 
-# # Merge predictions
-# predRsliceAll = np.swapaxes(predRsliceAll, 0, 1)
-# predAll = (predRscaleAll + predRsliceAll) / 2
-# predRsliceOut = np.swapaxes(predRsliceOut, 0, 1)
-# predOut = (predRscaleOut + predRsliceOut) / 2
+# Parameters
+sigma = (0.5, 1, 1)
+out_coeff = 3
+thresh = 0.25
+
+# Merge predictions
+predRsliceAll = np.swapaxes(predRsliceAll, 0, 1)
+predAll = (predRscaleAll + predRsliceAll) / 2
+predAll = gaussian(predAll, sigma=sigma)
+predRsliceOut = np.swapaxes(predRsliceOut, 0, 1)
+predOut = (predRscaleOut + predRsliceOut) / 2
+predOut = gaussian(predOut, sigma=sigma)
+predictions = predAll - predOut * out_coeff
+predictions[predictions < 0.01] = 0
+
+# Make labels
+labels = label(predictions > thresh)
+labels = expand_labels(labels, distance=5)
+labels[predAll < thresh] = 0
 
 # # Display
 # viewer = napari.Viewer()
 # viewer.add_image(C1C2_rscale)
+# viewer.add_labels(labels)
+# viewer.add_image(predictions, blending="additive", colormap="bop orange")
 # viewer.add_image(predAll, blending="additive", colormap="bop orange")
 # viewer.add_image(predOut, blending="additive", colormap="bop blue")
+
+#%% Postprocessing ------------------------------------------------------------
+
+from skimage.transform import resize
+labels_rsize = resize(labels, C1.shape, order=0)
+
+# Display
+viewer = napari.Viewer()
+viewer.add_image(C1, scale=voxSize)
+viewer.add_image(C2, scale=voxSize)
+viewer.add_labels(labels_rsize, scale=voxSize)
